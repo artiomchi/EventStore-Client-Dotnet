@@ -26,7 +26,7 @@ namespace EventStore.Client.Bugs {
 
 			}
  			const int eventCount = 250;
-			const int totalEvents = eventCount * 2;
+            const int totalEvents = eventCount;// * 2;
 
 			var completed = new TaskCompletionSource<bool>();
 			int hitCount = 0;
@@ -36,10 +36,10 @@ namespace EventStore.Client.Bugs {
 			var streamName = $"stream_{iteration}";
 			var subscriptionName = $"subscription_{iteration}";
 
-			for (var i = 0; i < eventCount; i++) {
-				await _fixture.StreamsClient.AppendToStreamAsync(streamName, StreamState.Any,
-					_fixture.CreateTestEvents());
-			}
+			// for (var i = 0; i < eventCount; i++) {
+			// 	await _fixture.StreamsClient.AppendToStreamAsync(streamName, StreamState.Any,
+			// 		_fixture.CreateTestEvents());
+			// }
 
 			await _fixture.Client.CreateAsync(streamName, subscriptionName,
 				new PersistentSubscriptionSettings(
@@ -49,24 +49,23 @@ namespace EventStore.Client.Bugs {
 			using (await _fixture.Client.SubscribeAsync(streamName, subscriptionName,
 				async (subscription, @event, retryCount, arg4) => {
 					int result;
-					if (retryCount >= 1) {
-						result = hitCount;
-					} else {
+					if (retryCount == 0 || retryCount is null) {
 						result = Interlocked.Increment(ref hitCount);
+						await subscription.Ack(@event);
+
+						if (totalEvents == result) {
+							completed.TrySetResult(true);
+						}
+					} else {
+						// This is a retry
+						await subscription.Ack(@event);
 					}
-
-					await subscription.Ack(@event);
-
-					if (totalEvents == result) {
-						completed.TrySetResult(true);
-					}
-
 				}, (s, dr, e) => {
 					if (e != null)
 						completed.TrySetException(e);
 					else
 						completed.TrySetException(new Exception($"{dr}"));
-				}, userCredentials)) {
+				}, userCredentials, autoAck: false)) {
 				for (var i = 0; i < eventCount; i++) {
 					await _fixture.StreamsClient.AppendToStreamAsync(streamName, StreamState.Any,
 						_fixture.CreateTestEvents());
